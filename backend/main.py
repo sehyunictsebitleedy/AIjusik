@@ -1,11 +1,12 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-load_dotenv()  # .env 로드 — ANTHROPIC_API_KEY, NEWS_API_KEY 등
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))  # .env 로드
 
 from backend.database import init_db, SessionLocal
 from backend.routers import alerts, briefing, portfolio, recommend, stocks

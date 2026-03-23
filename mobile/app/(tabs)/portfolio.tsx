@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { LiveStockItem, portfolioApi, PortfolioCreate } from '@/services/api';
+import { LiveStockItem, portfolioApi, PortfolioCreate, PortfolioUpdate } from '@/services/api';
 import { COLORS } from '@/constants/config';
 import StockCard from '@/components/StockCard';
 import { formatReturnPct } from '@/utils/format';
@@ -26,6 +26,7 @@ export default function PortfolioScreen() {
   const [stocks, setStocks] = useState<LiveStockItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editTarget, setEditTarget] = useState<LiveStockItem | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,6 +58,10 @@ export default function PortfolioScreen() {
         },
       },
     ]);
+  };
+
+  const handleEdit = (stock: LiveStockItem) => {
+    setEditTarget(stock);
   };
 
   const totalValue = stocks.reduce((s, x) => s + (x.current_value || 0), 0);
@@ -103,7 +108,8 @@ export default function PortfolioScreen() {
           <StockCard
             key={stock.id}
             stock={stock}
-            onLongPress={() => handleDelete(stock.id, stock.name)}
+            onEdit={() => handleEdit(stock)}
+            onDelete={() => handleDelete(stock.id, stock.name)}
           />
         ))}
       </ScrollView>
@@ -117,6 +123,12 @@ export default function PortfolioScreen() {
         visible={showAddModal}
         onClose={() => setShowAddModal(false)}
         onAdded={() => { setShowAddModal(false); load(); }}
+      />
+
+      <EditModal
+        stock={editTarget}
+        onClose={() => setEditTarget(null)}
+        onSaved={() => { setEditTarget(null); load(); }}
       />
     </View>
   );
@@ -309,3 +321,99 @@ const styles = StyleSheet.create({
   submitBtn: { flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 10, backgroundColor: COLORS.primary },
   submitBtnText: { color: COLORS.text, fontWeight: '700', fontSize: 15 },
 });
+
+// ────────────────────────────────────────────
+// 종목 수정 모달
+// ────────────────────────────────────────────
+
+function EditModal({
+  stock,
+  onClose,
+  onSaved,
+}: {
+  stock: LiveStockItem | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [buyPrice, setBuyPrice] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // stock이 바뀔 때마다 초기값 세팅
+  const prevId = useState<number | null>(null);
+  if (stock && stock.id !== prevId[0]) {
+    prevId[1](stock.id);
+    setBuyPrice(String(stock.buy_price));
+    setQuantity(String(stock.quantity));
+  }
+
+  const submit = async () => {
+    if (!stock) return;
+    const bp = parseFloat(buyPrice);
+    const qty = parseInt(quantity, 10);
+    if (!bp || bp <= 0) return Alert.alert('입력 오류', '매입가를 확인하세요.');
+    if (!qty || qty <= 0) return Alert.alert('입력 오류', '수량을 확인하세요.');
+
+    setLoading(true);
+    try {
+      const update: PortfolioUpdate = {};
+      if (bp !== stock.buy_price) update.buy_price = bp;
+      if (qty !== stock.quantity) update.quantity = qty;
+      await portfolioApi.update(stock.id, update);
+      onSaved();
+    } catch (e: any) {
+      Alert.alert('수정 실패', e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={!!stock} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <View style={styles.modalBox}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{stock?.name} 수정</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={22} color={COLORS.muted} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.row}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.inputLabel}>매입 평균가</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                value={buyPrice}
+                onChangeText={setBuyPrice}
+                placeholderTextColor={COLORS.muted}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.inputLabel}>수량 (주)</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                value={quantity}
+                onChangeText={setQuantity}
+                placeholderTextColor={COLORS.muted}
+              />
+            </View>
+          </View>
+
+          <View style={styles.modalButtons}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+              <Text style={styles.cancelBtnText}>취소</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.submitBtn} onPress={submit} disabled={loading}>
+              {loading
+                ? <ActivityIndicator color={COLORS.text} size="small" />
+                : <Text style={styles.submitBtnText}>저장</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}

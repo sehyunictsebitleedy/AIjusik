@@ -4,6 +4,7 @@
  */
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { LiveStockItem } from '@/services/api';
 import { COLORS } from '@/constants/config';
 import { MarketBadge, RsiBadge } from '@/components/AlertBadge';
@@ -12,9 +13,11 @@ import { formatChangePct, formatProfitLoss, formatReturnPct } from '@/utils/form
 interface Props {
   stock: LiveStockItem;
   onLongPress?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
-export default function StockCard({ stock, onLongPress }: Props) {
+export default function StockCard({ stock, onLongPress, onEdit, onDelete }: Props) {
   const { text: changePctText, isUp } = formatChangePct(stock.change_pct);
   const profitColor = stock.profit_loss >= 0 ? COLORS.up : COLORS.down;
 
@@ -39,11 +42,23 @@ export default function StockCard({ stock, onLongPress }: Props) {
           </View>
           <Text style={styles.name} numberOfLines={1}>{stock.name}</Text>
         </View>
-        <View style={styles.priceBlock}>
-          <Text style={styles.price}>{stock.current_price.toLocaleString()}</Text>
-          <Text style={[styles.changePct, { color: isUp ? COLORS.up : COLORS.down }]}>
-            {changePctText}
-          </Text>
+        <View style={styles.rightBlock}>
+          <View style={styles.priceBlock}>
+            <Text style={styles.price}>{stock.current_price.toLocaleString()}</Text>
+            <Text style={[styles.changePct, { color: isUp ? COLORS.up : COLORS.down }]}>
+              {changePctText}
+            </Text>
+          </View>
+          {onEdit && (
+            <TouchableOpacity style={styles.editBtn} onPress={(e) => { (e as any).stopPropagation?.(); onEdit(); }}>
+              <Ionicons name="create-outline" size={18} color={COLORS.muted} />
+            </TouchableOpacity>
+          )}
+          {onDelete && (
+            <TouchableOpacity style={styles.editBtn} onPress={(e) => { (e as any).stopPropagation?.(); onDelete(); }}>
+              <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -106,7 +121,9 @@ const styles = StyleSheet.create({
   tickerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
   ticker: { color: COLORS.text, fontWeight: '700', fontSize: 17 },
   name: { color: COLORS.muted, fontSize: 12, maxWidth: 160 },
+  rightBlock: { alignItems: 'flex-end', flexDirection: 'row', gap: 8 },
   priceBlock: { alignItems: 'flex-end' },
+  editBtn: { padding: 4, justifyContent: 'center' },
   price: { color: COLORS.text, fontWeight: '700', fontSize: 17 },
   changePct: { fontSize: 13, fontWeight: '600', marginTop: 2 },
   divider: { height: 1, backgroundColor: COLORS.border, marginBottom: 10 },

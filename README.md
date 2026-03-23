@@ -33,7 +33,8 @@
 ### 2. 내 주식
 - 종목 추가 (티커 · 매입가 · 수량)
 - 현재가 · 평가금액 · 평가손익 · 수익률 실시간 표시
-- 종목 카드 롱프레스 → 삭제
+- 종목 카드 ✏️ 버튼 → 매입가 · 수량 수정
+- 종목 카드 🗑️ 버튼 → 종목 삭제
 - 총 포트폴리오 손익 요약
 
 ### 3. 종목 상세
@@ -140,15 +141,16 @@ SCHEDULER_TIMEZONE=Asia/Seoul
 
 ### 백엔드 실행
 
-```bash
-cd backend
-pip install -r requirements.txt
+> Python 3.11 필수 (3.12+ 권장, 3.14 비호환)
 
-# 연결 검증 (선택)
-python -m backend.verify
+```bash
+# 프로젝트 루트에서 실행 (backend/ 안에서 실행하면 import 오류 발생)
+cd AIjusik
+
+"C:\Users\...\Python311\python.exe" -m pip install -r backend/requirements.txt
 
 # 서버 시작
-uvicorn backend.main:app --reload
+"C:\Users\...\Python311\python.exe" -m uvicorn backend.main:app --reload --port 8000
 # → http://localhost:8000
 # → http://localhost:8000/docs  (Swagger UI)
 ```
@@ -157,13 +159,15 @@ uvicorn backend.main:app --reload
 
 ```bash
 cd mobile
-npm install
-npx expo start
+npm install --legacy-peer-deps
+npx expo start --web   # 브라우저에서 확인
+npx expo start         # Expo Go 앱으로 확인 (SDK 52 필요)
 ```
 
-> **Android 에뮬레이터** 사용 시 `constants/config.ts`의 `API_BASE_URL`을 `http://10.0.2.2:8000`으로 변경한다.
-> **실제 기기** 사용 시 로컬 IP로 변경한다 (예: `http://192.168.0.10:8000`).
-> **푸시 알람**은 실제 기기에서만 동작한다.
+> **Expo Go** 앱은 SDK 52 버전 필요. 최신 Expo Go(SDK 53+)는 호환 안 될 수 있음.
+> **Android 에뮬레이터** 사용 시 `constants/config.ts`의 `API_BASE_URL`을 `http://10.0.2.2:8000`으로 변경.
+> **실제 기기** 사용 시 로컬 IP로 변경 (예: `http://192.168.0.10:8000`).
+> **푸시 알람**은 실제 기기에서만 동작.
 
 ---
 
