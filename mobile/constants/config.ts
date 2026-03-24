@@ -7,7 +7,7 @@
  *   - 실제 기기:       http://<로컬IP>:8000  (예: http://192.168.0.10:8000)
  */
 export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
+  process.env.EXPO_PUBLIC_API_URL ?? 'https://web-production-c13ae.up.railway.app';
 
 export const COLORS = {
   bg: '#0f172a',         // 메인 배경 (다크 네이비)
