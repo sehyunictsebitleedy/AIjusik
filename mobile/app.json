@@ -20,7 +20,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0f172a"
       },
-      "package": "com.personal.aijusik"
+      "package": "com.personal.aijusik",
+      "newArchEnabled": false
     },
     "plugins": [
       "expo-router",
