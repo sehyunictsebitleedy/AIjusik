@@ -24,17 +24,19 @@
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/notification-icon.png",
-          "color": "#3b82f6"
-        }
-      ]
+      "expo-notifications"
     ],
     "scheme": "aijusik",
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "4b0b0ac1-7989-462c-bbf3-99e8cbf114d2"
+      }
     }
   }
 }
