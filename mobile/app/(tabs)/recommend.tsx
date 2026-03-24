@@ -16,24 +16,32 @@ import { useFocusEffect } from 'expo-router';
 type MarketFilter = 'ALL' | 'KR' | 'US';
 
 export default function RecommendScreen() {
-  const [data, setData] = useState<RecommendResponse | null>(null);
+  const [krData, setKrData] = useState<RecommendResponse | null>(null);
+  const [usData, setUsData] = useState<RecommendResponse | null>(null);
   const [market, setMarket] = useState<MarketFilter>('ALL');
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (m: MarketFilter = market) => {
+  const load = useCallback(async (m: MarketFilter) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await recommendApi.get(m);
-      setData(res);
+      if (m === 'ALL') {
+        const [kr, us] = await Promise.all([recommendApi.get('KR'), recommendApi.get('US')]);
+        setKrData(kr);
+        setUsData(us);
+      } else if (m === 'KR') {
+        setKrData(await recommendApi.get('KR'));
+      } else {
+        setUsData(await recommendApi.get('US'));
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [market]);
+  }, []);
 
   useFocusEffect(useCallback(() => { load(market); }, [market]));
 
@@ -41,8 +49,15 @@ export default function RecommendScreen() {
     setGenerating(true);
     setError(null);
     try {
-      const res = await recommendApi.generate(market);
-      setData(res);
+      if (market === 'ALL') {
+        const [kr, us] = await Promise.all([recommendApi.generate('KR'), recommendApi.generate('US')]);
+        setKrData(kr);
+        setUsData(us);
+      } else if (market === 'KR') {
+        setKrData(await recommendApi.generate('KR'));
+      } else {
+        setUsData(await recommendApi.generate('US'));
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -55,6 +70,10 @@ export default function RecommendScreen() {
     load(m);
   };
 
+  const showKr = market === 'ALL' || market === 'KR';
+  const showUs = market === 'ALL' || market === 'US';
+  const hasData = (showKr && (krData?.items.length ?? 0) > 0) || (showUs && (usData?.items.length ?? 0) > 0);
+
   return (
     <ScrollView
       style={styles.container}
@@ -66,7 +85,7 @@ export default function RecommendScreen() {
         <Text style={styles.date}>{new Date().toLocaleDateString('ko-KR')} 기준</Text>
       </View>
 
-      {/* 시장 필터 */}
+      {/* 시장 탭 */}
       <View style={styles.filterRow}>
         {(['ALL', 'KR', 'US'] as MarketFilter[]).map((m) => (
           <TouchableOpacity
@@ -75,7 +94,7 @@ export default function RecommendScreen() {
             onPress={() => switchMarket(m)}
           >
             <Text style={[styles.filterBtnText, market === m && styles.filterBtnTextActive]}>
-              {m === 'ALL' ? '전체' : m}
+              {m === 'ALL' ? '전체' : m === 'KR' ? '🇰🇷 한국' : '🇺🇸 미국'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -104,7 +123,7 @@ export default function RecommendScreen() {
         </View>
       )}
 
-      {!data && !loading && !error && (
+      {!hasData && !loading && !error && (
         <View style={styles.emptyBox}>
           <Ionicons name="star-outline" size={48} color={COLORS.muted} />
           <Text style={styles.emptyText}>추천 종목이 없습니다</Text>
@@ -112,9 +131,25 @@ export default function RecommendScreen() {
         </View>
       )}
 
-      {data?.items.map((item, idx) => (
-        <RecommendCard key={`${item.ticker}-${idx}`} item={item} rank={idx + 1} />
-      ))}
+      {/* 한국 섹션 */}
+      {showKr && (krData?.items.length ?? 0) > 0 && (
+        <View>
+          {market === 'ALL' && <Text style={styles.sectionHeader}>🇰🇷 한국 추천 5종목</Text>}
+          {krData!.items.map((item, idx) => (
+            <RecommendCard key={`kr-${item.ticker}-${idx}`} item={item} rank={idx + 1} />
+          ))}
+        </View>
+      )}
+
+      {/* 미국 섹션 */}
+      {showUs && (usData?.items.length ?? 0) > 0 && (
+        <View>
+          {market === 'ALL' && <Text style={[styles.sectionHeader, { marginTop: 8 }]}>🇺🇸 미국 추천 5종목</Text>}
+          {usData!.items.map((item, idx) => (
+            <RecommendCard key={`us-${item.ticker}-${idx}`} item={item} rank={idx + 1} />
+          ))}
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -173,4 +208,5 @@ const styles = StyleSheet.create({
   direction: { fontWeight: '700', fontSize: 15 },
   name: { color: COLORS.muted, fontSize: 12, marginTop: 2 },
   reason: { color: COLORS.text, fontSize: 13, lineHeight: 20, opacity: 0.85 },
+  sectionHeader: { color: COLORS.muted, fontSize: 13, fontWeight: '700', marginBottom: 8, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
 });

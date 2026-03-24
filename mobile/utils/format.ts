@@ -20,8 +20,8 @@ export function formatChangePct(pct: number): { text: string; isUp: boolean } {
 
 /** 손익 금액 포맷 */
 export function formatProfitLoss(amount: number, market: Market): string {
-  const prefix = amount >= 0 ? '+' : '';
-  if (market === 'KR') return `${prefix}${Math.round(amount).toLocaleString('ko-KR')}원`;
+  const prefix = amount >= 0 ? '+' : '-';
+  if (market === 'KR') return `${prefix}${Math.abs(Math.round(amount)).toLocaleString('ko-KR')}원`;
   return `${prefix}$${Math.abs(amount).toFixed(2)}`;
 }
 

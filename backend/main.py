@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -12,6 +13,7 @@ from backend.database import init_db, SessionLocal
 from backend.routers import alerts, briefing, portfolio, recommend, stocks
 from backend.scheduler import setup_scheduler
 from backend.services.cleanup_service import run_cleanup
+from backend.services.stock_service import _get_kr_name_map
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,7 +36,16 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # 3. 스케줄러 시작
+    # 3. KR 종목 캐시 백그라운드 빌드 (검색 첫 응답 속도 개선)
+    def _warm_kr_cache():
+        try:
+            result = _get_kr_name_map()
+            logger.info(f"KR 종목 캐시 완료: {len(result)}개")
+        except Exception as e:
+            logger.warning(f"KR 캐시 빌드 실패: {e}")
+    threading.Thread(target=_warm_kr_cache, daemon=True).start()
+
+    # 4. 스케줄러 시작
     scheduler = setup_scheduler()
     scheduler.start()
     logger.info("스케줄러 시작 완료")

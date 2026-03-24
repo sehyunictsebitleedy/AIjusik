@@ -3,11 +3,45 @@
 - 미국 주식: yfinance (15분 지연)
 - 한국 주식: pykrx (당일 장 마감 후 종가 기준)
 """
+import logging
+import threading
 from datetime import datetime, timedelta
 
 import pandas as pd
 import yfinance as yf
 from pykrx import stock as krx
+
+logger = logging.getLogger(__name__)
+
+# ────────────────────────────────────────────
+# KR 종목 이름 캐시 (당일 1회만 pykrx 호출)
+# ────────────────────────────────────────────
+_kr_name_cache: dict[str, str] = {}   # ticker -> name
+_kr_cache_date: str = ""
+_kr_cache_lock = threading.Lock()
+
+
+def _get_kr_name_map() -> dict[str, str]:
+    """KR 전체 종목 {ticker: name} 딕셔너리. 당일 최초 호출 시에만 pykrx 조회."""
+    global _kr_name_cache, _kr_cache_date
+    today = datetime.now().strftime("%Y%m%d")
+    with _kr_cache_lock:
+        if _kr_cache_date == today and _kr_name_cache:
+            return _kr_name_cache
+        try:
+            tickers = krx.get_market_ticker_list(today, market="ALL")
+            mapping: dict[str, str] = {}
+            for ticker in tickers:
+                try:
+                    name = krx.get_market_ticker_name(ticker)
+                    mapping[ticker] = name
+                except Exception:
+                    pass
+            _kr_name_cache = mapping
+            _kr_cache_date = today
+        except Exception:
+            pass
+        return _kr_name_cache
 
 
 # ────────────────────────────────────────────
@@ -21,22 +55,47 @@ from pykrx import stock as krx
 
 
 def get_us_stock(ticker: str) -> dict:
-    """yfinance로 미국 주식 현재가 + 14일 일봉 조회"""
-    t = yf.Ticker(ticker)
-    info = t.fast_info  # 빠른 메타 조회
+    """yfinance로 미국 주식 현재가 + 60일 일봉 조회"""
+    t = yf.Ticker(ticker.upper())
 
-    current_price: float = info.last_price or 0.0
-    prev_close: float = info.previous_close or 0.0
+    try:
+        hist = t.history(period="3mo")
+    except Exception as e:
+        logger.error(f"yfinance history 실패 ({ticker}): {e}")
+        raise ValueError(f"yfinance: {ticker} 조회 실패 — {e}")
+
+    if hist is None or hist.empty:
+        raise ValueError(f"yfinance: {ticker} 데이터 없음 (빈 응답)")
+
+    logger.info(f"yfinance {ticker}: {len(hist)}행, 컬럼={list(hist.columns)}")
+
+    # multi-level column 처리 (yfinance 0.2+)
+    if isinstance(hist.columns, pd.MultiIndex):
+        hist.columns = hist.columns.get_level_values(0)
+
+    # Close 컬럼 이름 정규화 (대소문자 대응)
+    col_map = {c.lower(): c for c in hist.columns}
+    close_col = col_map.get("close", "Close")
+
+    history = _format_history_yf(hist)
+
+    current_price: float = float(hist[close_col].iloc[-1])
+    prev_close: float = float(hist[close_col].iloc[-2]) if len(hist) >= 2 else current_price
     change_pct: float = (
         ((current_price - prev_close) / prev_close * 100) if prev_close else 0.0
     )
 
-    hist = t.history(period="60d", interval="1d")
-    history = _format_history_yf(hist)
+    # 종목명 조회 (실패해도 ticker 사용)
+    name = ticker.upper()
+    try:
+        info = t.fast_info
+        name = getattr(info, "long_name", None) or getattr(info, "display_name", None) or ticker.upper()
+    except Exception:
+        pass
 
     return {
         "ticker": ticker.upper(),
-        "name": info.exchange or ticker,  # fast_info에 종목명 없음 → 별도 조회 생략
+        "name": name,
         "market": "US",
         "current_price": round(current_price, 4),
         "prev_close": round(prev_close, 4),
@@ -87,6 +146,44 @@ def get_kr_stock(ticker: str) -> dict:
     }
 
 
+def search_stocks(query: str, market: str = "ALL") -> list[dict]:
+    """종목명 또는 티커로 검색 — 자동완성용"""
+    results: list[dict] = []
+    q = query.lower()
+
+    if market in ("KR", "ALL"):
+        name_map = _get_kr_name_map()
+        for ticker, name in name_map.items():
+            if q in ticker.lower() or q in name.lower():
+                results.append({"ticker": ticker, "name": name, "market": "KR"})
+                if len(results) >= 10:
+                    break
+
+    if market in ("US", "ALL"):
+        try:
+            import httpx
+            resp = httpx.get(
+                "https://query2.finance.yahoo.com/v1/finance/search",
+                params={"q": query, "lang": "en-US", "quotesCount": 8, "newsCount": 0},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=5,
+            )
+            data = resp.json()
+            for item in data.get("quotes", []):
+                qtype = item.get("quoteType", "")
+                if qtype not in ("EQUITY", "ETF"):
+                    continue
+                results.append({
+                    "ticker": item.get("symbol", ""),
+                    "name": item.get("longname") or item.get("shortname") or item.get("symbol", ""),
+                    "market": "US",
+                })
+        except Exception:
+            pass
+
+    return results[:10]
+
+
 def get_stock(ticker: str, market: str) -> dict:
     """market('KR'|'US') 에 따라 분기"""
     if market.upper() == "KR":
@@ -94,20 +191,60 @@ def get_stock(ticker: str, market: str) -> dict:
     return get_us_stock(ticker)
 
 
+def validate_ticker(ticker: str, market: str) -> dict | None:
+    """티커 유효성 확인 + 종목명 반환. 없으면 None."""
+    if market.upper() == "KR":
+        # 1순위: 메모리 캐시 (서버 시작 후 빌드된 경우)
+        cache = _get_kr_name_map()
+        if cache:
+            name = cache.get(ticker)
+            if name:
+                return {"ticker": ticker, "name": name, "market": "KR"}
+            return None  # 캐시에 없으면 잘못된 티커
+
+        # 2순위: OHLCV 조회로 존재 여부 + 이름 확인 (캐시 미완성 시 폴백)
+        try:
+            today = datetime.now().strftime("%Y%m%d")
+            from_date = (datetime.now() - timedelta(days=10)).strftime("%Y%m%d")
+            df = krx.get_market_ohlcv(from_date, today, ticker)
+            if df.empty:
+                return None
+            name = _get_kr_stock_name(ticker)
+            return {"ticker": ticker, "name": name, "market": "KR"}
+        except Exception:
+            return None
+    else:
+        try:
+            t = yf.Ticker(ticker.upper())
+            hist = t.history(period="5d")
+            if hist.empty:
+                return None
+            # fast_info에서 이름 시도
+            try:
+                info = t.fast_info
+                name = getattr(info, "long_name", None) or getattr(info, "display_name", None)
+            except Exception:
+                name = None
+            return {"ticker": ticker.upper(), "name": name or ticker.upper(), "market": "US"}
+        except Exception:
+            return None
+
+
 # ────────────────────────────────────────────
 # 내부 헬퍼
 # ────────────────────────────────────────────
 
 def _format_history_yf(hist: pd.DataFrame) -> list[dict]:
+    col_map = {c.lower(): c for c in hist.columns}
     records = []
     for idx, row in hist.iterrows():
         records.append({
             "date": str(idx.date()),
-            "open": round(float(row["Open"]), 4),
-            "high": round(float(row["High"]), 4),
-            "low": round(float(row["Low"]), 4),
-            "close": round(float(row["Close"]), 4),
-            "volume": int(row["Volume"]),
+            "open":   round(float(row[col_map.get("open",   "Open")]),   4),
+            "high":   round(float(row[col_map.get("high",   "High")]),   4),
+            "low":    round(float(row[col_map.get("low",    "Low")]),    4),
+            "close":  round(float(row[col_map.get("close",  "Close")]),  4),
+            "volume": int(row[col_map.get("volume", "Volume")]),
         })
     return records
 

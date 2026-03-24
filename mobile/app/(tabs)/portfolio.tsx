@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { LiveStockItem, portfolioApi, PortfolioCreate, PortfolioUpdate } from '@/services/api';
+import { LiveStockItem, portfolioApi, stockApi, StockSearchResult, PortfolioCreate, PortfolioUpdate } from '@/services/api';
 import { COLORS } from '@/constants/config';
 import StockCard from '@/components/StockCard';
 import { formatReturnPct } from '@/utils/format';
@@ -43,21 +43,26 @@ export default function PortfolioScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const handleDelete = (id: number, name: string) => {
-    Alert.alert('종목 삭제', `${name}을(를) 삭제하시겠습니까?`, [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '삭제',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await portfolioApi.remove(id);
-            load();
-          } catch (e: any) {
-            Alert.alert('삭제 실패', e.message);
-          }
-        },
-      },
-    ]);
+    const doDelete = async () => {
+      try {
+        await portfolioApi.remove(id);
+        load();
+      } catch (e: any) {
+        Alert.alert('삭제 실패', e.message);
+      }
+    };
+
+    // Alert.alert은 웹에서 동작 안 할 수 있으므로 confirm 폴백 포함
+    if (typeof window !== 'undefined' && window.confirm) {
+      if (window.confirm(`${name}을(를) 삭제하시겠습니까?`)) {
+        doDelete();
+      }
+    } else {
+      Alert.alert('종목 삭제', `${name}을(를) 삭제하시겠습니까?`, [
+        { text: '취소', style: 'cancel' },
+        { text: '삭제', style: 'destructive', onPress: doDelete },
+      ]);
+    }
   };
 
   const handleEdit = (stock: LiveStockItem) => {
@@ -81,7 +86,10 @@ export default function PortfolioScreen() {
         {/* 총 손익 요약 */}
         {stocks.length > 0 && (
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>총 평가금액</Text>
+            <View style={styles.summaryHeader}>
+              <Text style={styles.summaryLabel}>총 평가금액</Text>
+              <Text style={styles.closingBadge}>종가 기준</Text>
+            </View>
             <Text style={styles.summaryValue}>{Math.round(totalValue).toLocaleString()}원</Text>
             <View style={styles.summaryRow}>
               <Text style={[styles.summaryProfit, { color: profitColor }]}>
@@ -147,29 +155,54 @@ function AddModal({
   onClose: () => void;
   onAdded: () => void;
 }) {
-  // 모달이 열릴 때마다 폼 초기화 (버그 수정: 이전 입력값 잔류 방지)
   const [form, setForm] = useState<PortfolioCreate>(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [tickerInput, setTickerInput] = useState('');
+  const [validated, setValidated] = useState<StockSearchResult | null>(null);
+  const [validateError, setValidateError] = useState('');
 
   const handleClose = () => {
-    setForm(EMPTY_FORM); // 닫을 때 초기화
+    setForm(EMPTY_FORM);
+    setTickerInput('');
+    setValidated(null);
+    setValidateError('');
     onClose();
   };
 
+  const handleMarketChange = (m: 'KR' | 'US') => {
+    setForm({ ...EMPTY_FORM, market: m });
+    setTickerInput('');
+    setValidated(null);
+    setValidateError('');
+  };
+
+  const handleValidate = async () => {
+    const ticker = tickerInput.trim().toUpperCase();
+    if (!ticker) return;
+    setValidating(true);
+    setValidated(null);
+    setValidateError('');
+    try {
+      const result = await stockApi.validate(form.market, ticker);
+      setValidated(result);
+      setForm((f) => ({ ...f, ticker: result.ticker, name: result.name }));
+    } catch {
+      setValidateError('종목을 찾을 수 없습니다. 티커를 확인하세요.');
+    } finally {
+      setValidating(false);
+    }
+  };
+
   const submit = async () => {
-    if (!form.ticker.trim()) return Alert.alert('입력 오류', '티커를 입력하세요.');
-    if (!form.name.trim()) return Alert.alert('입력 오류', '종목명을 입력하세요.');
+    if (!validated) return Alert.alert('입력 오류', '티커 확인 버튼을 먼저 눌러주세요.');
     if (form.buy_price <= 0) return Alert.alert('입력 오류', '매입가를 입력하세요.');
     if (form.quantity <= 0) return Alert.alert('입력 오류', '수량을 입력하세요.');
 
     setLoading(true);
     try {
-      await portfolioApi.add({
-        ...form,
-        ticker: form.ticker.trim().toUpperCase(),
-        name: form.name.trim(),
-      });
-      setForm(EMPTY_FORM);
+      await portfolioApi.add(form);
+      handleClose();
       onAdded();
     } catch (e: any) {
       Alert.alert('추가 실패', e.message);
@@ -196,7 +229,7 @@ function AddModal({
               <TouchableOpacity
                 key={m}
                 style={[styles.marketBtn, form.market === m && styles.marketBtnActive]}
-                onPress={() => setForm({ ...form, market: m })}
+                onPress={() => handleMarketChange(m)}
               >
                 <Text style={[styles.marketBtnText, form.market === m && { color: COLORS.text }]}>
                   {m === 'KR' ? '🇰🇷 한국' : '🇺🇸 미국'}
@@ -205,30 +238,47 @@ function AddModal({
             ))}
           </View>
 
-          {/* 티커 */}
+          {/* 티커 입력 + 확인 */}
           <Text style={styles.inputLabel}>
-            티커 {form.market === 'KR' ? '(예: 005930)' : '(예: AAPL)'}
+            {form.market === 'KR' ? '종목 코드 (예: 005930)' : '티커 (예: AAPL)'}
           </Text>
-          <TextInput
-            style={styles.input}
-            placeholder={form.market === 'KR' ? '005930' : 'AAPL'}
-            placeholderTextColor={COLORS.muted}
-            value={form.ticker}
-            onChangeText={(v) => setForm({ ...form, ticker: v })}
-            autoCapitalize="characters"
-          />
+          <View style={styles.tickerRow}>
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              placeholder={form.market === 'KR' ? '005930' : 'AAPL'}
+              placeholderTextColor={COLORS.muted}
+              value={tickerInput}
+              onChangeText={(v) => {
+                setTickerInput(v);
+                setValidated(null);
+                setValidateError('');
+              }}
+              autoCapitalize="characters"
+              onSubmitEditing={handleValidate}
+            />
+            <TouchableOpacity
+              style={[styles.validateBtn, validating && { opacity: 0.6 }]}
+              onPress={handleValidate}
+              disabled={validating || !tickerInput.trim()}
+            >
+              {validating
+                ? <ActivityIndicator size="small" color={COLORS.text} />
+                : <Text style={styles.validateBtnText}>확인</Text>}
+            </TouchableOpacity>
+          </View>
 
-          {/* 종목명 */}
-          <Text style={styles.inputLabel}>종목명</Text>
-          <TextInput
-            style={styles.input}
-            placeholder={form.market === 'KR' ? '삼성전자' : 'Apple Inc.'}
-            placeholderTextColor={COLORS.muted}
-            value={form.name}
-            onChangeText={(v) => setForm({ ...form, name: v })}
-          />
+          {/* 확인 결과 */}
+          {validated && (
+            <View style={styles.selectedBadge}>
+              <Ionicons name="checkmark-circle" size={14} color={COLORS.success} />
+              <Text style={styles.selectedText}>{validated.ticker} — {validated.name}</Text>
+            </View>
+          )}
+          {validateError ? (
+            <Text style={styles.validateError}>{validateError}</Text>
+          ) : null}
 
-          {/* 매입가 / 수량 — 나란히 */}
+          {/* 매입가 / 수량 */}
           <View style={styles.row}>
             <View style={{ flex: 1 }}>
               <Text style={styles.inputLabel}>매입 평균가</Text>
@@ -274,7 +324,9 @@ function AddModal({
 const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 96 },
   summaryCard: { backgroundColor: COLORS.surface, borderRadius: 14, padding: 16, marginBottom: 16 },
-  summaryLabel: { color: COLORS.muted, fontSize: 12, marginBottom: 4 },
+  summaryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  summaryLabel: { color: COLORS.muted, fontSize: 12 },
+  closingBadge: { color: COLORS.muted, fontSize: 11, backgroundColor: COLORS.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
   summaryValue: { color: COLORS.text, fontSize: 24, fontWeight: 'bold' },
   summaryRow: { flexDirection: 'row', gap: 6, marginTop: 4, alignItems: 'center' },
   summaryProfit: { fontSize: 15, fontWeight: '600' },
@@ -320,6 +372,38 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: COLORS.muted, fontWeight: '600', fontSize: 15 },
   submitBtn: { flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 10, backgroundColor: COLORS.primary },
   submitBtnText: { color: COLORS.text, fontWeight: '700', fontSize: 15 },
+  searchBox: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.bg, borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 11,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  searchInput: { flex: 1, color: COLORS.text, fontSize: 15 },
+  dropdown: {
+    backgroundColor: COLORS.bg, borderRadius: 8,
+    borderWidth: 1, borderColor: COLORS.border,
+    marginTop: 4, maxHeight: 200,
+  },
+  dropdownItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  dropdownTicker: { color: COLORS.primary, fontWeight: '700', fontSize: 13, width: 70 },
+  dropdownName: { color: COLORS.text, fontSize: 13, flex: 1 },
+  selectedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: COLORS.success + '20', borderRadius: 6,
+    paddingHorizontal: 10, paddingVertical: 6, marginTop: 8,
+  },
+  selectedText: { color: COLORS.success, fontSize: 13, fontWeight: '600' },
+  tickerRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  validateBtn: {
+    backgroundColor: COLORS.primary, borderRadius: 8,
+    paddingHorizontal: 16, paddingVertical: 11,
+  },
+  validateBtnText: { color: COLORS.text, fontWeight: '700', fontSize: 14 },
+  validateError: { color: COLORS.danger, fontSize: 12, marginTop: 6 },
 });
 
 // ────────────────────────────────────────────

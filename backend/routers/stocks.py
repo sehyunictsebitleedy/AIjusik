@@ -1,12 +1,13 @@
 """
 주식 데이터 API
-GET /stocks/{market}/{ticker}  — 현재가 + 일봉 히스토리
-GET /stocks/{market}/{ticker}/price — 현재가만 (간단 조회)
+GET /stocks/search?q=삼성&market=KR  — 종목 검색 (자동완성)
+GET /stocks/{market}/{ticker}         — 현재가 + 일봉 히스토리
+GET /stocks/{market}/{ticker}/price   — 현재가만 (간단 조회)
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from backend.services.stock_service import get_stock
+from backend.services.stock_service import get_stock, search_stocks
 
 router = APIRouter()
 
@@ -31,6 +32,30 @@ class HistoryItem(BaseModel):
 
 class StockResponse(PriceResponse):
     history: list[HistoryItem]
+
+
+class SearchResult(BaseModel):
+    ticker: str
+    name: str
+    market: str
+
+
+@router.get("/validate/{market}/{ticker}", response_model=SearchResult)
+def validate_ticker(market: str, ticker: str):
+    """티커 유효성 확인 및 종목명 반환 (종목 추가 시 사용)"""
+    market = market.upper()
+    if market not in ("KR", "US"):
+        raise HTTPException(status_code=400, detail="market은 KR 또는 US")
+    try:
+        from backend.services.stock_service import validate_ticker as _validate
+        result = _validate(ticker, market)
+        if not result:
+            raise HTTPException(status_code=404, detail="종목을 찾을 수 없습니다.")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.get("/{market}/{ticker}", response_model=StockResponse)

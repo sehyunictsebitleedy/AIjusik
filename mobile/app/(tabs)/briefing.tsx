@@ -9,12 +9,14 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { briefingApi, BriefingResponse } from '@/services/api';
+import { useFocusEffect } from 'expo-router';
+import { briefingApi, BriefingResponse, portfolioApi, PortfolioItem } from '@/services/api';
 import { COLORS } from '@/constants/config';
 import BriefingItem from '@/components/BriefingItem';
 
 export default function BriefingScreen() {
   const [data, setData] = useState<BriefingResponse | null>(null);
+  const [stocks, setStocks] = useState<PortfolioItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,14 +25,20 @@ export default function BriefingScreen() {
     setLoading(true);
     setError(null);
     try {
-      const res = await briefingApi.today();
-      setData(res);
+      const [briefing, list] = await Promise.all([
+        briefingApi.today().catch(() => null),
+        portfolioApi.list().catch(() => []),
+      ]);
+      setData(briefing);
+      setStocks(list);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const generate = useCallback(async () => {
     setGenerating(true);
@@ -56,6 +64,30 @@ export default function BriefingScreen() {
         <Text style={styles.title}>오늘의 브리핑</Text>
         <Text style={styles.date}>{new Date().toLocaleDateString('ko-KR')}</Text>
       </View>
+
+      {/* 내 보유 종목 */}
+      {stocks.length > 0 && (
+        <View style={styles.portfolioCard}>
+          <Text style={styles.sectionLabel}>💼 내 보유 종목 ({stocks.length}개)</Text>
+          <View style={styles.divider} />
+          {stocks.map((s) => (
+            <View key={s.id} style={styles.stockRow}>
+              <View style={styles.stockLeft}>
+                <Text style={styles.stockTicker}>{s.ticker}</Text>
+                <Text style={styles.stockName} numberOfLines={1}>{s.name}</Text>
+              </View>
+              <View style={styles.stockRight}>
+                <Text style={styles.stockQty}>{s.quantity}주</Text>
+                <Text style={styles.stockBuy}>
+                  매입 {s.market === 'KR'
+                    ? `${Math.round(s.buy_price).toLocaleString()}원`
+                    : `$${s.buy_price.toFixed(2)}`}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* 생성 버튼 */}
       <TouchableOpacity
@@ -152,4 +184,18 @@ const styles = StyleSheet.create({
   },
   sectionLabel: { fontSize: 13, fontWeight: '700', color: COLORS.muted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   summaryText: { color: COLORS.text, fontSize: 14, lineHeight: 22 },
+  portfolioCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+  },
+  divider: { height: 1, backgroundColor: COLORS.border, marginBottom: 10 },
+  stockRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 7 },
+  stockLeft: { flex: 1 },
+  stockTicker: { color: COLORS.text, fontWeight: '700', fontSize: 14 },
+  stockName: { color: COLORS.muted, fontSize: 11, marginTop: 1 },
+  stockRight: { alignItems: 'flex-end' },
+  stockQty: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
+  stockBuy: { color: COLORS.muted, fontSize: 11, marginTop: 2 },
 });

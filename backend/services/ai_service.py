@@ -58,33 +58,48 @@ def analyze_stock(
     news_text = "\n".join(f"- {s}" for s in news_summaries[:10]) or "관련 뉴스 없음"
     return_pct = ((current_price - buy_price) / buy_price * 100) if buy_price else 0
 
-    prompt = f"""다음 종목에 대해 투자 분석을 제공해주세요.
+    prompt = f"""다음 보유 종목이 최근 뉴스로 인해 위험한지, 안전한지, 추가 매수할만한지 판단해주세요.
 
 ## 종목 정보
 - 티커: {ticker} ({market})
 - 종목명: {name}
 - 매입가: {buy_price:,.2f}
-- 현재가: {current_price:,.2f}
-- 현재 수익률: {return_pct:.2f}%
 - RSI(14): {rsi_text}
 
 ## 오늘의 관련 뉴스
 {news_text}
 
+## 판단 기준
+- SELL: 뉴스가 이 종목에 심각한 부정적 영향을 줄 가능성이 높음 → 매도 고려
+- HOLD: 변동성은 있으나 큰 위험 없음 → 현 상태 유지
+- BUY: 뉴스가 긍정적이며 추가 매수 기회로 볼 수 있음
+
 ## 요청
-위 정보를 바탕으로 단기(1~5 영업일) 전망을 분석하고 아래 JSON 형식으로만 응답하세요.
+뉴스가 이 종목에 미칠 영향을 분석하고 아래 JSON 형식으로만 응답하세요.
 다른 텍스트 없이 JSON만 반환하세요.
 
 {{
   "signal": "HOLD",
   "predicted_change_pct": -3.5,
-  "reason": "분석 근거 2~3문장",
-  "risk_level": "MEDIUM"
+  "reason": "뉴스 기반 판단 근거 2~3문장. 왜 위험한지 또는 왜 안전한지 명확하게.",
+  "risk_level": "MEDIUM",
+  "volatility": "뉴스로 인한 예상 변동성 한 줄 요약",
+  "sell_target": {{
+    "price": 75000,
+    "reason": "이 가격에서 매도를 고려해야 하는 이유",
+    "horizon": "1~2주 내"
+  }},
+  "key_factors": ["핵심 요인 1", "핵심 요인 2", "핵심 요인 3"]
 }}
 
-signal: BUY | HOLD | SELL
-predicted_change_pct: 예측 등락률 (%)
-risk_level: LOW | MEDIUM | HIGH"""
+signal: BUY(추가매수 추천) | HOLD(보유유지) | SELL(위험/매도고려)
+predicted_change_pct: 뉴스 영향으로 인한 예측 등락률 (%)
+risk_level: LOW(안전) | MEDIUM(주의) | HIGH(위험)
+volatility: 변동성 요약 한 줄
+sell_target.price: 매도 고려 목표가 (현재가 기준 계산, 숫자만)
+sell_target.reason: 해당 가격에서 매도를 고려해야 하는 이유
+sell_target.horizon: 예상 달성 기간
+key_factors: 주가에 영향을 줄 핵심 요인 3가지 (뉴스 기반)"""
 
     try:
         client = _get_client()

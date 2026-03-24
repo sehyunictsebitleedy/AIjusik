@@ -8,15 +8,18 @@
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   BriefingAnalysis,
+  SellTarget,
   briefingApi,
   LiveStockItem,
   Market,
@@ -28,15 +31,15 @@ import { COLORS } from '@/constants/config';
 import CandleChart from '@/components/CandleChart';
 import RSIChart from '@/components/RSIChart';
 
-const SIGNAL_COLOR: Record<string, string> = {
-  BUY: COLORS.success,
-  HOLD: COLORS.warning,
-  SELL: COLORS.danger,
+const VERDICT: Record<string, { label: string; emoji: string; color: string }> = {
+  BUY:  { label: '추가매수 추천', emoji: '🟢', color: COLORS.success },
+  HOLD: { label: '보유 유지',     emoji: '🟡', color: COLORS.warning },
+  SELL: { label: '위험 · 매도 고려', emoji: '🔴', color: COLORS.danger },
 };
-const SIGNAL_LABEL: Record<string, string> = {
-  BUY: '매수 관심',
-  HOLD: '보유 유지',
-  SELL: '매도 검토',
+const RISK_META: Record<string, { label: string; color: string }> = {
+  HIGH:   { label: '변동 위험 높음', color: COLORS.danger },
+  MEDIUM: { label: '변동 주의',      color: COLORS.warning },
+  LOW:    { label: '안정적',         color: COLORS.success },
 };
 
 export default function StockDetailScreen() {
@@ -50,6 +53,21 @@ export default function StockDetailScreen() {
   const [stockData, setStockData] = useState<StockData | null>(null);
   const [analysis, setAnalysis] = useState<BriefingAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const runAnalysis = useCallback(async () => {
+    if (!stockId) return;
+    setAnalyzing(true);
+    try {
+      const result = await briefingApi.analyzeStock(Number(stockId));
+      setAnalysis(result);
+    } catch (e: any) {
+      Alert.alert('분석 실패', e.message ?? '잠시 후 다시 시도해주세요.');
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [stockId]);
 
   const load = useCallback(async () => {
     if (!ticker || !market) return;
@@ -149,7 +167,12 @@ export default function StockDetailScreen() {
       )}
 
       {/* ── AI 전망 ── */}
-      <AiSignalCard analysis={analysis} liveData={liveData} />
+      <AiSignalCard
+        analysis={analysis}
+        liveData={liveData}
+        onAnalyze={stockId ? runAnalysis : undefined}
+        analyzing={analyzing}
+      />
     </ScrollView>
   );
 }
@@ -170,54 +193,124 @@ function ProfitCell({ label, value, color }: { label: string; value: string; col
 function AiSignalCard({
   analysis,
   liveData,
+  onAnalyze,
+  analyzing,
 }: {
   analysis: BriefingAnalysis | null;
   liveData: LiveStockItem | null;
+  onAnalyze?: () => void;
+  analyzing?: boolean;
 }) {
-  // 브리핑 분석 있으면 사용, 없으면 RSI 기반 fallback
-  const signal = analysis?.signal
-    ?? (liveData?.rsi_signal === 'OVERSOLD' ? 'BUY'
-      : liveData?.rsi_signal === 'OVERBOUGHT' ? 'SELL'
-      : 'HOLD');
+  if (!analysis) {
+    return (
+      <View style={styles.aiCard}>
+        <Text style={styles.sectionLabel}>AI 전망</Text>
+        <Text style={styles.aiNote}>아직 분석 결과가 없습니다.</Text>
+        {onAnalyze && (
+          <TouchableOpacity
+            style={styles.analyzeBtn}
+            onPress={onAnalyze}
+            disabled={analyzing}
+          >
+            {analyzing
+              ? <ActivityIndicator color={COLORS.text} size="small" />
+              : <Text style={styles.analyzeBtnText}>🤖 AI 분석 시작</Text>}
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }
 
-  const color = SIGNAL_COLOR[signal] ?? COLORS.muted;
-  const label = SIGNAL_LABEL[signal] ?? signal;
+  const verdict = VERDICT[analysis.signal] ?? VERDICT.HOLD;
+  const risk = analysis.risk_level ? RISK_META[analysis.risk_level] : null;
+  const isUp = (analysis.predicted_change_pct ?? 0) >= 0;
 
   return (
-    <View style={[styles.aiCard, { borderLeftColor: color }]}>
-      <Text style={styles.sectionLabel}>AI 전망</Text>
-      <View style={[styles.signalBadge, { backgroundColor: color + '22' }]}>
-        <Text style={[styles.signalText, { color }]}>{label}</Text>
+    <View style={[styles.aiCard, { borderLeftColor: verdict.color }]}>
+      <View style={styles.aiCardHeader}>
+        <Text style={styles.sectionLabel}>AI 전망</Text>
+        {onAnalyze && (
+          <TouchableOpacity onPress={onAnalyze} disabled={analyzing} style={styles.reAnalyzeBtn}>
+            {analyzing
+              ? <ActivityIndicator size="small" color={COLORS.primary} />
+              : <Text style={styles.reAnalyzeText}>재분석</Text>}
+          </TouchableOpacity>
+        )}
       </View>
 
-      {analysis ? (
-        <>
-          <View style={styles.aiMetaRow}>
-            {analysis.rsi_value != null && (
-              <Text style={styles.aiMeta}>RSI {analysis.rsi_value.toFixed(1)}</Text>
-            )}
-            {analysis.predicted_change_pct != null && (
-              <Text style={[
-                styles.aiMeta,
-                { color: analysis.predicted_change_pct >= 0 ? COLORS.up : COLORS.down },
-              ]}>
-                예측 {analysis.predicted_change_pct >= 0 ? '+' : ''}
-                {analysis.predicted_change_pct.toFixed(1)}%
-              </Text>
-            )}
-            {analysis.risk_level && (
-              <Text style={styles.aiMeta}>리스크 {analysis.risk_level}</Text>
-            )}
-          </View>
-          {analysis.reason && (
-            <Text style={styles.aiReason}>{analysis.reason}</Text>
-          )}
-        </>
-      ) : (
-        <Text style={styles.aiNote}>
-          브리핑 탭에서 AI 분석을 생성하면 상세 전망이 표시됩니다.
+      {/* 판정 배너 */}
+      <View style={[styles.verdictBanner, { backgroundColor: verdict.color + '22' }]}>
+        <Text style={[styles.verdictText, { color: verdict.color }]}>
+          {verdict.emoji}  {verdict.label}
         </Text>
+        {analysis.predicted_change_pct != null && (
+          <Text style={[styles.predictText, { color: isUp ? COLORS.up : COLORS.down }]}>
+            예측 {isUp ? '+' : ''}{analysis.predicted_change_pct.toFixed(1)}%
+          </Text>
+        )}
+      </View>
+
+      {/* 메타 칩 */}
+      <View style={styles.aiMetaRow}>
+        {risk && (
+          <View style={styles.metaChip}>
+            <Text style={[styles.metaChipText, { color: risk.color }]}>{risk.label}</Text>
+          </View>
+        )}
+        {analysis.rsi_value != null && (
+          <View style={styles.metaChip}>
+            <Text style={styles.metaChipText}>RSI {analysis.rsi_value.toFixed(1)}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* 변동성 요약 */}
+      {analysis.volatility && (
+        <View style={styles.infoBox}>
+          <Text style={styles.infoLabel}>📊 변동성 전망</Text>
+          <Text style={styles.infoText}>{analysis.volatility}</Text>
+        </View>
       )}
+
+      {/* 핵심 요인 */}
+      {analysis.key_factors?.length > 0 && (
+        <View style={styles.infoBox}>
+          <Text style={styles.infoLabel}>🔑 핵심 영향 요인</Text>
+          {analysis.key_factors.map((f, i) => (
+            <Text key={i} style={styles.factorItem}>• {f}</Text>
+          ))}
+        </View>
+      )}
+
+      {/* 목표 매도가 */}
+      {analysis.sell_target && (
+        <SellTargetCard target={analysis.sell_target} market={analysis.market as Market} />
+      )}
+
+      {/* AI 근거 */}
+      {analysis.reason && (
+        <View style={styles.infoBox}>
+          <Text style={styles.infoLabel}>🤖 AI 분석 근거</Text>
+          <Text style={styles.aiReason}>{analysis.reason}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function SellTargetCard({ target, market }: { target: SellTarget; market: Market }) {
+  const priceStr = market === 'KR'
+    ? `${Math.round(target.price).toLocaleString()}원`
+    : `$${target.price.toFixed(2)}`;
+
+  return (
+    <View style={styles.sellTargetCard}>
+      <View style={styles.sellTargetHeader}>
+        <Text style={styles.sellTargetLabel}>💰 매도 목표가</Text>
+        <Text style={styles.sellTargetHorizon}>{target.horizon}</Text>
+      </View>
+      <Text style={styles.sellTargetPrice}>{priceStr}</Text>
+      <Text style={styles.sellTargetReason}>{target.reason}</Text>
     </View>
   );
 }
@@ -278,8 +371,43 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   signalText: { fontWeight: '800', fontSize: 16 },
-  aiMetaRow: { flexDirection: 'row', gap: 16, marginBottom: 10 },
-  aiMeta: { color: COLORS.muted, fontSize: 13 },
-  aiReason: { color: COLORS.text, fontSize: 14, lineHeight: 22, opacity: 0.85 },
-  aiNote: { color: COLORS.muted, fontSize: 13 },
+  verdictBanner: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12,
+  },
+  verdictText: { fontSize: 15, fontWeight: '700' },
+  predictText: { fontSize: 13, fontWeight: '600' },
+  volatilityBox: {
+    backgroundColor: COLORS.bg, borderRadius: 8,
+    padding: 10, marginBottom: 10,
+  },
+  volatilityLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '700', marginBottom: 4 },
+  volatilityText: { color: COLORS.text, fontSize: 13, lineHeight: 19 },
+  aiMetaRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 },
+  metaChip: { backgroundColor: COLORS.bg, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  metaChipText: { color: COLORS.muted, fontSize: 12, fontWeight: '600' },
+  infoBox: { backgroundColor: COLORS.bg, borderRadius: 8, padding: 12, marginBottom: 10 },
+  infoLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '700', marginBottom: 6 },
+  infoText: { color: COLORS.text, fontSize: 13, lineHeight: 20 },
+  factorItem: { color: COLORS.text, fontSize: 13, lineHeight: 22, opacity: 0.85 },
+  sellTargetCard: {
+    backgroundColor: COLORS.warning + '15',
+    borderRadius: 10, padding: 14, marginBottom: 10,
+    borderWidth: 1, borderColor: COLORS.warning + '40',
+  },
+  sellTargetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  sellTargetLabel: { color: COLORS.warning, fontSize: 12, fontWeight: '700' },
+  sellTargetHorizon: { color: COLORS.muted, fontSize: 11, backgroundColor: COLORS.border, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  sellTargetPrice: { color: COLORS.text, fontSize: 24, fontWeight: '800', marginBottom: 6 },
+  sellTargetReason: { color: COLORS.text, fontSize: 13, lineHeight: 19, opacity: 0.8 },
+  aiReason: { color: COLORS.text, fontSize: 13, lineHeight: 21, opacity: 0.9 },
+  aiNote: { color: COLORS.muted, fontSize: 13, marginBottom: 14 },
+  aiCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  analyzeBtn: {
+    backgroundColor: COLORS.primary, borderRadius: 8,
+    paddingVertical: 12, alignItems: 'center', marginTop: 12,
+  },
+  analyzeBtnText: { color: COLORS.text, fontWeight: '700', fontSize: 15 },
+  reAnalyzeBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: COLORS.primary + '30' },
+  reAnalyzeText: { color: COLORS.primary, fontSize: 12, fontWeight: '600' },
 });

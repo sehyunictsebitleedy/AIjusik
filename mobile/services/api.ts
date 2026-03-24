@@ -74,6 +74,12 @@ export interface LiveStockItem extends PortfolioItem {
   error?: string;
 }
 
+export interface SellTarget {
+  price: number;
+  reason: string;
+  horizon: string;
+}
+
 export interface BriefingAnalysis {
   stock_id: number;
   ticker: string;
@@ -84,6 +90,9 @@ export interface BriefingAnalysis {
   reason: string | null;
   risk_level: string | null;
   rsi_value: number | null;
+  volatility: string | null;
+  sell_target: SellTarget | null;
+  key_factors: string[];
 }
 
 export interface BriefingResponse {
@@ -146,12 +155,21 @@ async function request<T>(
 // 주식 데이터
 // ────────────────────────────────────────────
 
+export interface StockSearchResult {
+  ticker: string;
+  name: string;
+  market: Market;
+}
+
 export const stockApi = {
   getStock: (market: Market, ticker: string) =>
     request<StockData>(`/stocks/${market}/${ticker}`),
 
   getPrice: (market: Market, ticker: string) =>
     request<Omit<StockData, 'history'>>(`/stocks/${market}/${ticker}/price`),
+
+  validate: (market: Market, ticker: string) =>
+    request<StockSearchResult>(`/stocks/validate/${market}/${encodeURIComponent(ticker)}`),
 };
 
 // ────────────────────────────────────────────
@@ -197,6 +215,9 @@ export const briefingApi = {
 
   generate: () =>
     request<BriefingResponse>('/briefing/generate', { method: 'POST' }),
+
+  analyzeStock: (stockId: number) =>
+    request<BriefingAnalysis>(`/briefing/analyze/${stockId}`, { method: 'POST' }),
 };
 
 // ────────────────────────────────────────────
