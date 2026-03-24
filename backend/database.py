@@ -1,7 +1,10 @@
+import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-DATABASE_URL = "sqlite:///./aijusik.db"
+_db_path = os.getenv("DB_PATH", "./aijusik.db")
+DATABASE_URL = f"sqlite:///{_db_path}"
 
 engine = create_engine(
     DATABASE_URL,
