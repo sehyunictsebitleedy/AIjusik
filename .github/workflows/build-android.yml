@@ -19,23 +19,27 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
 
-      - name: Setup EAS
-        uses: expo/expo-github-action@v8
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          java-version: '17'
+          distribution: 'temurin'
 
       - name: Install dependencies
         working-directory: mobile
         run: npm ci
 
-      - name: Build APK
+      - name: Expo Prebuild
         working-directory: mobile
-        run: eas build --platform android --profile preview --non-interactive --local --output ../aijusik.apk
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: aijusik-apk
-          path: aijusik.apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 7
