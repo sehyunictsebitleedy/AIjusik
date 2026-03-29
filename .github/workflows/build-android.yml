@@ -38,23 +38,15 @@ jobs:
         run: |
           echo "=== settings.gradle (before patch) ==="
           cat settings.gradle
-          python3 - <<'EOF'
-import re
-
-with open("settings.gradle", "r") as f:
-    content = f.read()
-
-if "expo-modules-core" not in content:
-    content = content.replace(
-        "pluginManagement {",
-        'pluginManagement {\n    includeBuild "../node_modules/expo-modules-core/android"'
-    )
-    with open("settings.gradle", "w") as f:
-        f.write(content)
-    print("Patched: expo-modules-core/android added")
+          python3 -c "
+content = open('settings.gradle').read()
+if 'expo-modules-core' not in content:
+    content = content.replace('pluginManagement {', 'pluginManagement {\n    includeBuild \"../node_modules/expo-modules-core/android\"')
+    open('settings.gradle', 'w').write(content)
+    print('Patched: expo-modules-core/android added')
 else:
-    print("Already contains expo-modules-core, skipping patch")
-EOF
+    print('Already contains expo-modules-core, skipping patch')
+"
           echo "=== settings.gradle (after patch) ==="
           cat settings.gradle
 
