@@ -37,6 +37,10 @@ jobs:
         working-directory: mobile/android
         run: python3 ../../.github/scripts/patch_settings_gradle.py
 
+      - name: Set kotlinVersion
+        working-directory: mobile/android
+        run: echo "kotlinVersion=1.9.24" >> gradle.properties
+
       - name: Build APK
         working-directory: mobile/android
         run: ./gradlew assembleRelease
