@@ -33,6 +33,11 @@ jobs:
         working-directory: mobile
         run: npx expo prebuild --platform android --clean
 
+      - name: Fix Gradle plugin resolution
+        working-directory: mobile/android
+        run: |
+          sed -i 's|includeBuild "../node_modules/@react-native/gradle-plugin"|includeBuild "../node_modules/@react-native/gradle-plugin"\n    includeBuild "../node_modules/expo-modules-core/android"|' settings.gradle
+
       - name: Build APK
         working-directory: mobile/android
         run: ./gradlew assembleRelease
