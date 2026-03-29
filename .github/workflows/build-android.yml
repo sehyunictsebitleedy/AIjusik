@@ -29,19 +29,6 @@ jobs:
         working-directory: mobile
         run: npm ci
 
-      - name: Expo Prebuild
-        working-directory: mobile
-        run: npx expo prebuild --platform android --clean
-
-      - name: Fix Gradle plugin resolution
-        working-directory: mobile/android
-        run: python3 ../../.github/scripts/patch_settings_gradle.py
-
-      - name: Set kotlinVersion
-        run: |
-          echo "kotlinVersion=1.9.24" >> mobile/android/gradle.properties
-          echo "kotlinVersion=1.9.24" >> mobile/node_modules/expo-modules-core/android/gradle.properties
-
       - name: Build APK
         working-directory: mobile/android
         run: ./gradlew assembleRelease
