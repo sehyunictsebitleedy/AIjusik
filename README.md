@@ -219,6 +219,42 @@ DELETE /alerts/{id}                      알람 삭제
 
 ---
 
+## 배포
+
+### 백엔드 — Railway
+
+- `main` 브랜치 push 시 자동 배포
+- Railway Variables에 환경변수 설정 필요 (`ANTHROPIC_API_KEY` 필수)
+
+### Android APK — GitHub Actions
+
+- `main` 브랜치 push 시 자동 빌드
+- 완료 후 **Actions → Artifacts → aijusik-apk** 다운로드 → 폰에 설치
+- `android/` 폴더는 `expo prebuild` 결과물이며 git에 포함됨
+- 네이티브 패키지 변경 시 로컬에서 재실행 필요:
+  ```bash
+  cd mobile
+  npx expo prebuild --platform android --clean
+  git add android/ && git commit && git push
+  ```
+
+#### Android 빌드 관련 고정 설정
+
+| 항목 | 값 | 이유 |
+|---|---|---|
+| Kotlin 버전 | `1.9.25` | Compose Compiler 1.5.15 호환 |
+| expo-font | `~13.0.4` | Expo SDK 52 호환 (`npx expo install expo-font`로 설치) |
+| New Architecture | 비활성화 | Expo SDK 52 Gradle 빌드 안정성 |
+
+#### JS/UI만 변경 시 (빠른 업데이트)
+
+```bash
+cd mobile
+eas update --branch production --message "수정 내용"
+```
+
+---
+
 ## 주의사항
 
 - 이 앱은 **투자 권유 서비스가 아님** — AI 분석은 참고 정보 제공 목적
