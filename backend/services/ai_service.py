@@ -24,6 +24,7 @@ def _get_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        print(f"[DEBUG] ANTHROPIC_API_KEY 앞 15자: '{api_key[:15]}' / 길이: {len(api_key)}")
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.")
         _client = anthropic.Anthropic(api_key=api_key)
