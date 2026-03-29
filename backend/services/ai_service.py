@@ -16,7 +16,7 @@ import re
 
 import anthropic
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-4-5"
 _client: anthropic.Anthropic | None = None
 
 
